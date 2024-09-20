@@ -1,7 +1,6 @@
 // Importar las dependencias necesarias
 const express = require("express");
 const axios = require("axios");
-require("dotenv").config(); // Cargar variables de entorno desde el archivo .env
 
 // Inicializar la aplicación de Express
 const app = express();
@@ -28,7 +27,10 @@ app.post("/openai", async (req, res) => {
       "https://api.openai.com/v1/chat/completions",
       {
         model: "gpt-3.5-turbo",
-        messages: [{ role: "user", content: prompt }],
+        messages: [
+          { role: "system", content: "You are a helpful assistant." },
+          { role: "user", content: prompt },
+        ],
         max_tokens: 100,
       },
       {
@@ -39,9 +41,33 @@ app.post("/openai", async (req, res) => {
       }
     );
 
+    // Devolver la respuesta de OpenAI
     res.json(response.data);
   } catch (error) {
-    // Manejo de errores mejorado (igual que antes)
+    // Manejo de errores mejorado
+    if (error.response) {
+      console.error(
+        "Error en la respuesta de OpenAI:",
+        error.response.status,
+        error.response.data
+      );
+      res.status(error.response.status).json({
+        error:
+          error.response.data.error.message ||
+          "Error en la respuesta de OpenAI",
+      });
+    } else if (error.request) {
+      console.error("No se recibió respuesta de OpenAI:", error.request);
+      res.status(500).json({ error: "No se recibió respuesta de OpenAI" });
+    } else {
+      console.error(
+        "Error al configurar la solicitud a OpenAI:",
+        error.message
+      );
+      res
+        .status(500)
+        .json({ error: "Error al configurar la solicitud a OpenAI" });
+    }
   }
 });
 
