@@ -1,13 +1,10 @@
-import OpenAI from "openai";
-import express from "express";
-import cors from "cors";
+const OpenAI = require("openai");
+const express = require("express");
+const cors = require("cors");
 
 const app = express();
 const port = process.env.PORT || 3001;
 const openai = new OpenAI();
-
-// Reemplaza este ID con el `assistant_id` del asistente que ya has creado
-const ASSISTANT_ID = "tu_assistant_id_aqui";
 
 // Middleware
 app.use(cors());
@@ -37,7 +34,7 @@ app.post("/openai", async (req, res) => {
 
     // Ejecutar el asistente y hacer streaming de la respuesta
     openai.beta.threads.runs.stream(thread.id, {
-      assistant_id: asst_IVAmvHEsePwrzSI4VAeQ8CKz
+      assistant_id: process.env.ASSISTANT_ID // Asistente ya creado
     })
       .on('textCreated', () => res.write('assistant > '))
       .on('textDelta', (textDelta) => res.write(textDelta.value))
