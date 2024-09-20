@@ -1,10 +1,8 @@
-// app.js
-
 require('dotenv').config();
 const OpenAI = require("openai");
 const express = require("express");
 const cors = require("cors");
-const { Readable } = require("stream");
+const { v4: uuidv4 } = require('uuid'); // Importar uuid
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -41,18 +39,66 @@ app.post("/openai", async (req, res) => {
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
 
+    // Generar un ID único para esta conversación
+    const messageId = uuidv4();
+
     // Función para manejar el streaming de datos
     const handleStream = () => {
       stream.on('textDelta', (delta) => {
-        // Formatear los datos en formato SSE
-        res.write(`data: ${JSON.stringify({ text: delta.value })}\n\n`);
+        // Formatear los datos en el formato especificado
+        const data = {
+          id: `msg_${messageId}`,
+          object: "thread.message.delta",
+          delta: {
+            content: [
+              {
+                index: 0, // Puedes ajustar el índice si es necesario
+                type: "text",
+                text: {
+                  value: delta.value
+                }
+              }
+            ]
+          }
+        };
+        res.write(`data: ${JSON.stringify(data)}\n\n`);
       }).on('end', () => {
         // Indicar el fin del stream
-        res.write(`data: [DONE]\n\n`);
+        const doneData = {
+          id: `msg_${messageId}`,
+          object: "thread.message.delta",
+          delta: {
+            content: [
+              {
+                index: 0,
+                type: "text",
+                text: {
+                  value: "[DONE]"
+                }
+              }
+            ]
+          }
+        };
+        res.write(`data: ${JSON.stringify(doneData)}\n\n`);
         res.end();
       }).on('error', (err) => {
         console.error("Error en el stream:", err);
-        res.write(`data: [ERROR] ${err.message}\n\n`);
+        const errorData = {
+          id: `msg_${messageId}`,
+          object: "thread.message.delta",
+          delta: {
+            content: [
+              {
+                index: 0,
+                type: "error",
+                text: {
+                  value: err.message
+                }
+              }
+            ]
+          }
+        };
+        res.write(`data: ${JSON.stringify(errorData)}\n\n`);
         res.end();
       });
     };
