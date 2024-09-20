@@ -82,13 +82,15 @@ app.post("/openai", async (req, res) => {
         }
 
         try {
-          const parsed = JSON.parse(message);
-          const content = parsed.choices[0].delta?.content;
+          if (message.startsWith('{') || message.startsWith('[')) {
+            const parsed = JSON.parse(message); // Solo parsear JSON válido
+            const content = parsed.choices[0].delta?.content;
 
-          if (content) {
-            // Enviar el contenido parcial al cliente
-            res.write(content);
-            assistantResponse += content;
+            if (content) {
+              // Enviar contenido al cliente
+              res.write(content);
+              assistantResponse += content;
+            }
           }
         } catch (error) {
           console.error("Error al procesar el stream:", error);
