@@ -11,6 +11,11 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 app.use(cors());
 app.use(express.json());
 
+// Ruta básica para evitar el error Cannot GET /
+app.get("/", (req, res) => {
+  res.send("Servidor Express funcionando correctamente!");
+});
+
 // Ejecutar una herramienta
 const executeToolCall = async (toolCall, execute, logging) => {
   let args;
