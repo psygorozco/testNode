@@ -12,6 +12,6 @@
     "cors": "^2.8.5",
     "express": "^4.17.1",
     "openai": "^4.62.1",
-    "stream": "0.0.2"  // Añadir stream si es necesario
+    "stream": "0.0.2"
   }
 }
