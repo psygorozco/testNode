@@ -4,70 +4,86 @@ const axios = require("axios");
 
 // Inicializar la aplicación de Express
 const app = express();
-const port = process.env.PORT || 3001;
+const port = process.env.PORT || 3001; // Render usa un puerto dinámico
 
 // Middleware para procesar JSON en las peticiones
 app.use(express.json());
 
 // Ruta de prueba
 app.get("/", (req, res) => {
-  res.send("Servidor Express conectado a OpenAI!");
+  res.send("Servidor Express con streaming a OpenAI!");
 });
 
-// Ruta para hacer la llamada a la API de OpenAI
+// Ruta para hacer la llamada a la API de OpenAI con streaming
 app.post("/openai", async (req, res) => {
   const { prompt } = req.body;
 
   if (!prompt) {
-    return res.status(400).json({ error: "Prompt es necesario" });
+    return res.status(400).json({ error: "El campo 'prompt' es necesario" });
   }
+
+  // Configurar los headers para permitir el streaming
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
 
   try {
     const response = await axios.post(
       "https://api.openai.com/v1/chat/completions",
       {
         model: "gpt-3.5-turbo",
-        messages: [
-          { role: "system", content: "You are a helpful assistant." },
-          { role: "user", content: prompt },
-        ],
+        messages: [{ role: "user", content: prompt }],
         max_tokens: 100,
+        stream: true, // Activar streaming
       },
       {
         headers: {
           Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
           "Content-Type": "application/json",
         },
+        responseType: "stream", // Axios manejará la respuesta como un stream
       }
     );
 
-    // Devolver la respuesta de OpenAI
-    res.json(response.data);
+    // Escuchar los datos del stream
+    response.data.on("data", (chunk) => {
+      const lines = chunk
+        .toString("utf8")
+        .split("\n")
+        .filter((line) => line.trim() !== ""); // Filtrar las líneas no vacías
+
+      for (const line of lines) {
+        const message = line.replace(/^data: /, "");
+
+        if (message === "[DONE]") {
+          // Cuando OpenAI indica que el stream ha finalizado
+          res.end();
+          return;
+        }
+
+        try {
+          const parsed = JSON.parse(message);
+          const content = parsed.choices[0].delta?.content;
+
+          if (content) {
+            // Enviar el contenido parcial al cliente
+            res.write(content);
+          }
+        } catch (error) {
+          console.error("Error al procesar el stream:", error);
+        }
+      }
+    });
+
+    // Manejar errores de streaming
+    response.data.on("error", (error) => {
+      console.error("Error en el stream de OpenAI:", error);
+      res.status(500).json({ error: "Error en el stream de OpenAI" });
+    });
+
   } catch (error) {
-    // Manejo de errores mejorado
-    if (error.response) {
-      console.error(
-        "Error en la respuesta de OpenAI:",
-        error.response.status,
-        error.response.data
-      );
-      res.status(error.response.status).json({
-        error:
-          error.response.data.error.message ||
-          "Error en la respuesta de OpenAI",
-      });
-    } else if (error.request) {
-      console.error("No se recibió respuesta de OpenAI:", error.request);
-      res.status(500).json({ error: "No se recibió respuesta de OpenAI" });
-    } else {
-      console.error(
-        "Error al configurar la solicitud a OpenAI:",
-        error.message
-      );
-      res
-        .status(500)
-        .json({ error: "Error al configurar la solicitud a OpenAI" });
-    }
+    console.error("Error en la solicitud a OpenAI:", error);
+    res.status(500).json({ error: "Error al conectar con OpenAI" });
   }
 });
 
