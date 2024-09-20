@@ -13,18 +13,30 @@ app.use(cors()); // Permitir solicitudes desde cualquier origen
 // Middleware para procesar JSON en las peticiones
 app.use(express.json());
 
-// Ruta de prueba
-app.get("/", (req, res) => {
-  res.send("Servidor Express con streaming a OpenAI!");
-});
+// Almacenar las conversaciones en memoria
+const conversations = {};
 
-// Ruta para hacer la llamada a la API de OpenAI con streaming
+// Ruta para hacer la llamada a la API de OpenAI con hilos de conversación y streaming
 app.post("/openai", async (req, res) => {
-  const { prompt } = req.body;
+  const { prompt, conversationId } = req.body;
 
   if (!prompt) {
     return res.status(400).json({ error: "El campo 'prompt' es necesario" });
   }
+
+  // Verificar si existe un hilo de conversación previo
+  let messages = [];
+  if (conversationId && conversations[conversationId]) {
+    messages = conversations[conversationId]; // Obtener el historial de la conversación
+  } else {
+    // Crear un nuevo hilo de conversación
+    const newConversationId = Date.now().toString();
+    conversations[newConversationId] = messages;
+    res.setHeader("conversation-id", newConversationId); // Enviar el ID de la conversación al cliente
+  }
+
+  // Agregar el nuevo mensaje al historial
+  messages.push({ role: "user", content: prompt });
 
   // Configurar los headers para permitir el streaming
   res.setHeader("Content-Type", "text/event-stream");
@@ -36,7 +48,7 @@ app.post("/openai", async (req, res) => {
       "https://api.openai.com/v1/chat/completions",
       {
         model: "gpt-3.5-turbo",
-        messages: [{ role: "user", content: prompt }],
+        messages: messages, // Enviar el historial completo de la conversación
         max_tokens: 100,
         stream: true, // Activar streaming
       },
@@ -48,6 +60,8 @@ app.post("/openai", async (req, res) => {
         responseType: "stream", // Axios manejará la respuesta como un stream
       }
     );
+
+    let assistantResponse = "";
 
     // Escuchar los datos del stream
     response.data.on("data", (chunk) => {
@@ -62,6 +76,8 @@ app.post("/openai", async (req, res) => {
         if (message === "[DONE]") {
           // Cuando OpenAI indica que el stream ha finalizado
           res.end();
+          // Guardar la respuesta del asistente en el historial
+          messages.push({ role: "assistant", content: assistantResponse });
           return;
         }
 
@@ -72,6 +88,7 @@ app.post("/openai", async (req, res) => {
           if (content) {
             // Enviar el contenido parcial al cliente
             res.write(content);
+            assistantResponse += content;
           }
         } catch (error) {
           console.error("Error al procesar el stream:", error);
