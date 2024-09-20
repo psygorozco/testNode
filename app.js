@@ -2,7 +2,7 @@ require('dotenv').config();
 const OpenAI = require("openai");
 const express = require("express");
 const cors = require("cors");
-const { v4: uuidv4 } = require('uuid'); // Importar uuid
+const { v4: uuidv4 } = require('uuid');
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -19,97 +19,69 @@ app.get("/", (req, res) => {
   res.send("Servidor Express funcionando correctamente!");
 });
 
-// Ruta para manejar solicitudes de OpenAI con SSE Simulados
+// Ruta para manejar solicitudes de OpenAI con el formato y headers requeridos
 app.post("/openai", async (req, res) => {
   const { prompt, threadId } = req.body;
   if (!prompt) return res.status(400).json({ error: "El campo 'prompt' es necesario" });
 
   try {
     // Crear o usar un hilo existente
-    let thread = threadId || (await openai.beta.threads.create({ messages: [{ role: "user", content: prompt }] })).id;
-    if (!threadId) {
-      res.setHeader("thread-id", thread);
-    }
+    let thread = threadId || (await openai.beta.threads.create({
+      messages: [{ role: "user", content: prompt }]
+    })).id;
+
+    // Configurar los headers de la respuesta
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Expose-Headers', 'vary,access-control-allow-origin,x-thread-id,access-control-expose-headers,content-type,transfer-encoding,date,server,connection,x-final-url');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Transfer-Encoding', 'chunked');
+    res.setHeader('Vary', 'Origin');
+    res.setHeader('X-Final-URL', req.protocol + '://' + req.get('host') + req.originalUrl);
+    res.setHeader('X-Thread-Id', thread);
 
     // Iniciar el stream desde OpenAI
-    const stream = await openai.beta.threads.runs.stream(thread, { assistant_id: assistantId });
-
-    // Configurar encabezados para SSE Simulados
-    res.setHeader("Content-Type", "text/event-stream");
-    res.setHeader("Cache-Control", "no-cache");
-    res.setHeader("Connection", "keep-alive");
+    const openaiStream = await openai.beta.threads.runs.stream(thread, { assistant_id: assistantId });
 
     // Generar un ID único para esta conversación
     const messageId = uuidv4();
 
-    // Función para manejar el streaming de datos
-    const handleStream = () => {
-      stream.on('textDelta', (delta) => {
-        // Formatear los datos en el formato especificado
-        const data = {
-          id: `msg_${messageId}`,
-          object: "thread.message.delta",
-          delta: {
-            content: [
-              {
-                index: 0, // Puedes ajustar el índice si es necesario
-                type: "text",
-                text: {
-                  value: delta.value
-                }
-              }
-            ]
-          }
-        };
-        res.write(`data: ${JSON.stringify(data)}\n\n`);
-      }).on('end', () => {
-        // Indicar el fin del stream
-        const doneData = {
-          id: `msg_${messageId}`,
-          object: "thread.message.delta",
-          delta: {
-            content: [
-              {
-                index: 0,
-                type: "text",
-                text: {
-                  value: "[DONE]"
-                }
-              }
-            ]
-          }
-        };
-        res.write(`data: ${JSON.stringify(doneData)}\n\n`);
-        res.end();
-      }).on('error', (err) => {
-        console.error("Error en el stream:", err);
-        const errorData = {
-          id: `msg_${messageId}`,
-          object: "thread.message.delta",
-          delta: {
-            content: [
-              {
-                index: 0,
-                type: "error",
-                text: {
-                  value: err.message
-                }
-              }
-            ]
-          }
-        };
-        res.write(`data: ${JSON.stringify(errorData)}\n\n`);
-        res.end();
-      });
-    };
+    // Variable para el índice de fragmentos
+    let index = 0;
 
-    // Iniciar el manejo del stream
-    handleStream();
+    // Manejar el streaming de datos
+    openaiStream.on('event', (event) => {
+      if (event.event === "thread.message.delta") {
+        const deltaContent = event.data.delta.content;
+        if (deltaContent) {
+          // Formatear cada fragmento de texto recibido
+          const fragment = {
+            id: event.data.id || `msg_${messageId}`,
+            object: 'thread.message.delta',
+            delta: {
+              content: deltaContent.map((contentItem) => ({
+                index: index++,
+                type: contentItem.type,
+                text: {
+                  value: contentItem.text.value
+                }
+              }))
+            }
+          };
+          res.write(JSON.stringify(fragment));
+        }
+      }
+    }).on('end', () => {
+      res.end();
+    }).on('error', (err) => {
+      console.error("Error en el stream:", err);
+      res.status(500).json({ error: err.message });
+    });
 
-    // Opcional: Manejar la desconexión del cliente
+    // Manejar la desconexión del cliente
     req.on('close', () => {
       console.log('Cliente desconectado');
-      stream.destroy(); // Terminar el stream si el cliente se desconecta
+      openaiStream.destroy(); // Terminar el stream si el cliente se desconecta
     });
 
   } catch (error) {
