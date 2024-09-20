@@ -1,61 +1,53 @@
+// Importar las dependencias necesarias
 const express = require("express");
+const axios = require("axios");
+require("dotenv").config(); // Cargar variables de entorno desde el archivo .env
+
+// Inicializar la aplicación de Express
 const app = express();
 const port = process.env.PORT || 3001;
 
-app.get("/", (req, res) => res.type('html').send(html));
+// Middleware para procesar JSON en las peticiones
+app.use(express.json());
 
-const server = app.listen(port, () => console.log(`Example app listening on port ${port}!`));
+// Ruta de prueba
+app.get("/", (req, res) => {
+  res.send("Servidor Express conectado a OpenAI!");
+});
 
-server.keepAliveTimeout = 120 * 1000;
-server.headersTimeout = 120 * 1000;
+// Ruta para hacer la llamada a la API de OpenAI
+app.post("/openai", async (req, res) => {
+  const { prompt } = req.body;
 
-const html = `
-<!DOCTYPE html>
-<html>
-  <head>
-    <title>Hello from Render!</title>
-    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.5.1/dist/confetti.browser.min.js"></script>
-    <script>
-      setTimeout(() => {
-        confetti({
-          particleCount: 100,
-          spread: 70,
-          origin: { y: 0.6 },
-          disableForReducedMotion: true
-        });
-      }, 500);
-    </script>
-    <style>
-      @import url("https://p.typekit.net/p.css?s=1&k=vnd5zic&ht=tk&f=39475.39476.39477.39478.39479.39480.39481.39482&a=18673890&app=typekit&e=css");
-      @font-face {
-        font-family: "neo-sans";
-        src: url("https://use.typekit.net/af/00ac0a/00000000000000003b9b2033/27/l?primer=7cdcb44be4a7db8877ffa5c0007b8dd865b3bbc383831fe2ea177f62257a9191&fvd=n7&v=3") format("woff2"), url("https://use.typekit.net/af/00ac0a/00000000000000003b9b2033/27/d?primer=7cdcb44be4a7db8877ffa5c0007b8dd865b3bbc383831fe2ea177f62257a9191&fvd=n7&v=3") format("woff"), url("https://use.typekit.net/af/00ac0a/00000000000000003b9b2033/27/a?primer=7cdcb44be4a7db8877ffa5c0007b8dd865b3bbc383831fe2ea177f62257a9191&fvd=n7&v=3") format("opentype");
-        font-style: normal;
-        font-weight: 700;
+  if (!prompt) {
+    return res.status(400).json({ error: "Prompt es necesario" });
+  }
+
+  try {
+    // Hacer la solicitud a la API de OpenAI
+    const response = await axios.post(
+      "https://api.openai.com/v1/completions",
+      {
+        model: "text-davinci-003", // Modelo de OpenAI
+        prompt: prompt,
+        max_tokens: 100,
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, // Leer la clave desde las variables de entorno
+        },
       }
-      html {
-        font-family: neo-sans;
-        font-weight: 700;
-        font-size: calc(62rem / 16);
-      }
-      body {
-        background: white;
-      }
-      section {
-        border-radius: 1em;
-        padding: 1em;
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        margin-right: -50%;
-        transform: translate(-50%, -50%);
-      }
-    </style>
-  </head>
-  <body>
-    <section>
-      Hello from Render!
-    </section>
-  </body>
-</html>
-`
+    );
+
+    // Devolver la respuesta de OpenAI
+    res.json(response.data);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Error al conectar con OpenAI" });
+  }
+});
+
+// Iniciar el servidor
+app.listen(port, () => {
+  console.log(`Servidor corriendo en el puerto ${port}`);
+});
