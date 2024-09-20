@@ -1,10 +1,14 @@
 // Importar las dependencias necesarias
 const express = require("express");
+const cors = require("cors"); // Importar CORS
 const axios = require("axios");
 
 // Inicializar la aplicación de Express
 const app = express();
 const port = process.env.PORT || 3001; // Render usa un puerto dinámico
+
+// Habilitar CORS para todas las solicitudes
+app.use(cors()); // Permitir solicitudes desde cualquier origen
 
 // Middleware para procesar JSON en las peticiones
 app.use(express.json());
