@@ -2,6 +2,7 @@
 const express = require("express");
 const cors = require("cors");
 const OpenAI = require("openai");
+const { PassThrough } = require("stream"); // Necesario para manejar streams
 
 // Inicializar la aplicación de Express
 const app = express();
@@ -40,12 +41,11 @@ app.post("/openai", async (req, res) => {
 
   // Manejo de hilos (threads)
   let messages = [];
-
   let currentConversationId = conversationId;
+
   if (currentConversationId && conversations[currentConversationId]) {
     messages = conversations[currentConversationId];
   } else {
-    // Generar un nuevo conversationId si no existe
     currentConversationId = Date.now().toString();
     conversations[currentConversationId] = messages;
     res.setHeader('conversation-id', currentConversationId); // Enviar el conversationId al cliente
@@ -55,19 +55,16 @@ app.post("/openai", async (req, res) => {
   messages.push({ role: "user", content: prompt });
 
   try {
-    // Llamada a la API de OpenAI con streaming
-    const completion = await openai.createChatCompletion(
-      {
-        model: "gpt-3.5-turbo",
-        messages: messages,
-        stream: true,
-      },
-      { responseType: "stream" }
-    );
+    const completion = await openai.createChatCompletion({
+      model: "gpt-3.5-turbo",
+      messages: messages,
+      stream: true,
+    });
 
     let assistantResponse = "";
+    const stream = new PassThrough(); // Crear un stream intermedio para manejar los datos
+    stream.pipe(res); // Piping al response del cliente
 
-    // Escuchar los datos de la respuesta en streaming
     completion.data.on("data", (data) => {
       const lines = data
         .toString()
@@ -78,7 +75,7 @@ app.post("/openai", async (req, res) => {
         const message = line.replace(/^data: /, "");
         if (message === "[DONE]") {
           // Fin del streaming
-          res.end();
+          stream.end();
           // Guardar el historial de la conversación
           messages.push({ role: "assistant", content: assistantResponse });
           conversations[currentConversationId] = messages;
@@ -89,8 +86,8 @@ app.post("/openai", async (req, res) => {
           const parsed = JSON.parse(message);
           const content = parsed.choices[0].delta?.content;
           if (content) {
-            // Enviar el contenido al cliente
-            res.write(content);
+            // Escribir el contenido al stream (y al cliente)
+            stream.write(content);
             // Agregar el contenido al mensaje del asistente
             assistantResponse += content;
           }
@@ -102,8 +99,7 @@ app.post("/openai", async (req, res) => {
 
     // Manejar el final del stream
     completion.data.on("end", () => {
-      // En caso de que el stream termine sin enviar [DONE]
-      res.end();
+      stream.end(); // Asegurar el final correcto del stream
     });
 
     // Manejar errores en el stream
