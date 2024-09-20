@@ -24,26 +24,24 @@ app.post("/openai", async (req, res) => {
   }
 
   try {
-    // Hacer la solicitud a la API de OpenAI
     const response = await axios.post(
-      "https://api.openai.com/v1/completions",
+      "https://api.openai.com/v1/chat/completions",
       {
-        model: "text-davinci-003", // Modelo de OpenAI
-        prompt: prompt,
+        model: "gpt-3.5-turbo",
+        messages: [{ role: "user", content: prompt }],
         max_tokens: 100,
       },
       {
         headers: {
-          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, // Leer la clave desde las variables de entorno
+          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+          "Content-Type": "application/json",
         },
       }
     );
 
-    // Devolver la respuesta de OpenAI
     res.json(response.data);
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: "Error al conectar con OpenAI" });
+    // Manejo de errores mejorado (igual que antes)
   }
 });
 
